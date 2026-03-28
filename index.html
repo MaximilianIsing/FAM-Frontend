@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>F.A.M.</title>
+  <link rel="icon" href="/media/TabIcon256x256.png" type="image/png" sizes="256x256" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="landing" class="landing">
+    <iframe
+      class="landing__dither"
+      src="/dist/index.html?pixel=2"
+      title=""
+      aria-hidden="true"
+      tabindex="-1"
+    ></iframe>
+    <div class="landing__content">
+      <div class="landing__line">
+        <h1 id="landing-headline" class="landing__title"></h1>
+      </div>
+      <div class="landing__connect-wrap">
+        <button
+          type="button"
+          id="landing-connect"
+          class="landing__connect"
+          aria-hidden="true"
+        >
+          <span class="landing__connect__prompt" aria-hidden="true">&gt;</span>
+          <span class="landing__connect__label">Connect</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="fam-terminal" class="fam-terminal fam-terminal--hidden" hidden>
+    <div class="app">
+      <div
+        id="fam-corner-logo"
+        class="fam-corner-logo fam-corner-logo--hidden"
+        aria-hidden="true"
+      >
+        <img
+          class="fam-corner-logo__img"
+          src="/media/Logo1008x330.png"
+          alt="First Amendment Models"
+          width="280"
+          height="92"
+          decoding="async"
+        />
+      </div>
+      <main class="terminal" id="terminal">
+        <div class="terminal-inner">
+          <div class="terminal-scroll-wrap" id="terminal-scroll-wrap">
+            <div class="terminal-output" id="terminal-scroll">
+              <div class="terminal-transcript" id="output" aria-live="polite"></div>
+              <form class="terminal-prompt-line" id="form" autocomplete="off">
+                <label class="prompt" id="promptLabel" for="input">FAM&gt;</label>
+                <input
+                  type="text"
+                  id="input"
+                  class="input terminal-input"
+                  spellcheck="false"
+                  placeholder=""
+                  aria-label="Command input"
+                />
+              </form>
+              <div class="terminal-below-prompt-hit" aria-hidden="true"></div>
+            </div>
+            <div class="terminal-vscrollbar" id="terminal-vscrollbar" hidden>
+              <button
+                type="button"
+                class="terminal-vscrollbar__btn"
+                id="terminal-vscrollbar-up"
+                tabindex="-1"
+                aria-hidden="true"
+              >
+                ▲
+              </button>
+              <div class="terminal-vscrollbar__track" id="terminal-vscrollbar-track">
+                <div class="terminal-vscrollbar__thumb" id="terminal-vscrollbar-thumb"></div>
+              </div>
+              <button
+                type="button"
+                class="terminal-vscrollbar__btn"
+                id="terminal-vscrollbar-down"
+                tabindex="-1"
+                aria-hidden="true"
+              >
+                ▼
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="landing.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
