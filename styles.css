@@ -119,14 +119,14 @@ html.terminal-phase body {
   overflow-y: visible;
 }
 
-/* Headline block centered; four forced lines via `<br />` in landing.js */
+/* PC (pre–mobile commit): centers the block; glyphs read left-to-right in one row. */
 .landing__line {
   width: var(--landing-line-width, auto);
   max-width: 100%;
   min-width: 0;
   margin-left: auto;
   margin-right: auto;
-  text-align: center;
+  text-align: left;
   box-sizing: border-box;
   overflow-x: hidden;
 }
@@ -136,18 +136,16 @@ html.terminal-phase body {
   font-family: var(--font-pixel);
   font-size: clamp(2.25rem, 11vw, 6.25rem);
   font-weight: normal;
-  line-height: 1.12;
+  line-height: 1.05;
   letter-spacing: 0.04em;
   color: #ffffff;
-  white-space: normal;
+  white-space: nowrap;
   display: block;
   width: max-content;
   max-width: 100%;
   min-width: 0;
-  margin-left: auto;
-  margin-right: auto;
   box-sizing: border-box;
-  text-align: center;
+  text-align: left;
   -webkit-text-stroke: 5px #000000;
   paint-order: stroke fill;
   text-shadow:
@@ -1274,6 +1272,17 @@ html.terminal-phase body {
   min-width: 0;
   padding: 0;
   margin: 0;
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: pre-wrap;
+  overflow-x: hidden;
+  overflow-y: auto;
+  field-sizing: content;
+  min-height: 1.45em;
+  max-height: min(38vh, 10.5rem);
 }
 
 .input.terminal-input::placeholder {
@@ -1415,6 +1424,28 @@ html.terminal-phase body {
 /* -------------------------------------------------------------------------- */
 
 @media (max-width: 640px) {
+  /* No page scroll while landing is up (body padding + min-height was overflowing). */
+  html:has(#landing:not([hidden])) {
+    overflow: hidden;
+    height: 100%;
+  }
+
+  html:has(#landing:not([hidden])) body {
+    overflow: hidden;
+    overscroll-behavior: none;
+    height: 100%;
+    max-height: 100dvh;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .landing {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   html.terminal-phase {
     /* Reduces double-tap zoom delay on iOS where supported */
     touch-action: manipulation;
@@ -1425,6 +1456,14 @@ html.terminal-phase body {
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
     padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
     padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+    max-height: 100%;
+    overflow: hidden;
+    overflow-y: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    box-sizing: border-box;
   }
 
   .landing__line {
@@ -1468,6 +1507,18 @@ html.terminal-phase body {
     min-height: 44px;
     min-width: 44px;
     padding: 0.55rem 1.1rem;
+  }
+
+  /* Shorter viewports: smaller headline so four lines + Connect fit without clipping */
+  @media (max-height: 720px) {
+    .landing__title {
+      font-size: clamp(1.5rem, 6.5vw, 3.75rem);
+      margin-bottom: 0.65rem;
+    }
+
+    .landing__connect-wrap {
+      min-height: 2.25rem;
+    }
   }
 
   .fam-terminal {
@@ -1545,26 +1596,26 @@ html.terminal-phase body {
     padding: 8px 10px;
   }
 
-  /* Prompt on first row; full-width field below — easier to tap and type */
+  /* One row: FAM> + wrapping textarea (no flex-basis 100% — that shoved input to next line). */
   .terminal-prompt-line {
-    flex-wrap: wrap;
-    align-items: center;
+    flex-wrap: nowrap;
+    align-items: flex-start;
     gap: 6px;
-    row-gap: 8px;
   }
 
-  .prompt {
-    flex: 0 0 auto;
+  .terminal-prompt-line .prompt {
+    padding-top: 0.35rem;
   }
 
   .input.terminal-input {
     /* 16px+ avoids iOS zoom-on-focus */
     font-size: 16px;
     line-height: 1.4;
-    flex: 1 1 100%;
+    flex: 1 1 0;
     min-width: 0;
     min-height: 44px;
     padding: 4px 0;
+    max-height: min(42vh, 11rem);
   }
 
   .terminal-below-prompt-hit {

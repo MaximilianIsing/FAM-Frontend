@@ -2262,6 +2262,13 @@
     }
 
     el.form.addEventListener("submit", (e) => onSubmit(e));
+    el.input.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      if (e.shiftKey) return;
+      if (e.isComposing || e.keyCode === 229) return;
+      e.preventDefault();
+      el.form.requestSubmit();
+    });
     document.addEventListener("keydown", onKeyDown);
     if (el.terminal) {
       el.terminal.addEventListener("pointerdown", onTerminalPointerDownCapture, true);
