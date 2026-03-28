@@ -4,8 +4,15 @@ const fs = require("fs");
 const path = require("path");
 const { Readable } = require("stream");
 const express = require("express");
+const { rateLimit } = require("express-rate-limit");
 
 const app = express();
+
+/** So `req.ip` is the real client behind Render / other reverse proxies. */
+if (process.env.RENDER === "true" || process.env.NODE_ENV === "production") {
+  const hops = Number(process.env.TRUST_PROXY_HOPS);
+  app.set("trust proxy", Number.isFinite(hops) && hops >= 0 ? hops : 1);
+}
 const PORT = Number(process.env.PORT) || 3000;
 const ROOT = path.join(__dirname, "..");
 
@@ -198,6 +205,22 @@ app.get("/health", async (req, res) => {
     });
   }
 });
+
+/**
+ * Soft per-IP cap on expensive API routes only (not /health or static assets).
+ * Defaults are intentionally loose — safety net, not a product limit.
+ * Override: RATE_LIMIT_WINDOW_MS (ms), RATE_LIMIT_MAX (requests per window per IP).
+ */
+const apiLimiter = rateLimit({
+  windowMs: Math.max(60_000, Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000),
+  limit: Math.max(10, Number(process.env.RATE_LIMIT_MAX) || 800),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    error: "Too many requests from this address. Please wait a few minutes.",
+  },
+});
+app.use("/api", apiLimiter);
 
 /** Non-streaming chat → POST /v1/chat */
 app.post("/api/chat", async (req, res) => {

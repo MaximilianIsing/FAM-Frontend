@@ -65,6 +65,8 @@ html.terminal-phase body {
   padding: 0;
   align-items: stretch;
   font-family: var(--font-pixel);
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 /* Landing (dither + decrypt) — shown first */
@@ -631,6 +633,8 @@ html.terminal-phase body {
   z-index: 1;
   width: 100%;
   height: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
   display: flex;
   justify-content: stretch;
   align-items: stretch;
@@ -730,7 +734,9 @@ html.terminal-phase body {
 .terminal-below-prompt-hit {
   flex: 1 0 auto;
   min-height: 2.75rem;
-  min-width: 100%;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   flex-shrink: 0;
   cursor: text;
   -webkit-tap-highlight-color: transparent;
@@ -857,7 +863,10 @@ html.terminal-phase body {
 .line {
   margin-bottom: 10px;
   word-wrap: break-word;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
+  max-width: 100%;
+  min-width: 0;
   padding-left: 10px;
   margin-left: 0;
   border-left: 3px solid transparent;
@@ -866,6 +875,11 @@ html.terminal-phase body {
 
 .line:last-child {
   margin-bottom: 0;
+}
+
+.line__body {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .line.system {
@@ -887,7 +901,9 @@ html.terminal-phase body {
     rgba(251, 191, 36, 0.14) 0%,
     transparent 60%
   );
-  text-shadow: 0 0 20px rgba(251, 191, 36, 0.2);
+  /* Glow can extend past the box and widen scrollWidth; clip without hiding text. */
+  overflow-x: hidden;
+  text-shadow: 0 0 12px rgba(251, 191, 36, 0.18);
 }
 
 .line.error {
@@ -961,6 +977,14 @@ html.terminal-phase body {
     rgba(81, 207, 102, 0.1) 0%,
     transparent 55%
   );
+}
+
+.line.help .help-tip {
+  margin: 0 0 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #b2f0c8;
+  opacity: 0.95;
 }
 
 .line.help h3 {
