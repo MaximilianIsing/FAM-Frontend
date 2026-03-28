@@ -60,14 +60,15 @@
               <div class="terminal-transcript" id="output" aria-live="polite"></div>
               <form class="terminal-prompt-line" id="form" autocomplete="off">
                 <label class="prompt" id="promptLabel" for="input">FAM&gt;</label>
-                <input
-                  type="text"
+                <textarea
                   id="input"
                   class="input terminal-input"
+                  rows="1"
                   spellcheck="false"
                   placeholder=""
                   aria-label="Command input"
-                />
+                  enterkeyhint="send"
+                ></textarea>
               </form>
               <div class="terminal-below-prompt-hit" aria-hidden="true"></div>
             </div>
