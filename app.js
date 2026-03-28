@@ -144,6 +144,7 @@
       paragraphs: [
         "Without arguments, /help prints every command available in your current mode (simple vs advanced), grouped by category with a color key at the top.",
         "With a command name, /help shows this expanded view: what the command is for, edge cases, and a copy-paste-style example.",
+        "While the model is generating a reply, Ctrl+C stops the request and tells the backend to abort; text already shown in the transcript is kept.",
       ],
       example: "/help\n/help restore",
     },
@@ -1011,6 +1012,7 @@
       const groups = groupHelpKeysByCategory(keys);
       let html = `<div class="help"><h3>${escapeHtml(title)}</h3>`;
       html += formatHelpLegendHtml(groups);
+      html += `<p class="help-tip">${escapeHtml("Ctrl+C — abort the model while it is replying (partial reply stays in the transcript).")}</p>`;
       for (const g of groups) {
         const catMeta = HELP_CATEGORY_ORDER.find((c) => c.id === g.id);
         const secTitle = escapeHtml(catMeta ? catMeta.label : g.id);
@@ -1064,7 +1066,7 @@
       "system",
       [
         "Mission — Why I built First Amendment Models",
-        "The big AI platforms didn’t stumble into surveillance and lock-in. Your prompts and patterns are a product line: packaged, sold, and used to train the next round of models you never opted into. Safety layers and refusals are about promoting agendas, instilling bias, and keeping you inside a fence that was built on purpose. You’re not the customer; you’re the supply.",
+        "The big AI platforms didn’t stumble into surveillance. Your prompts and patterns are a product line: packaged, sold, and used to train the next round of models you never opted into. Safety layers and refusals are about promoting agendas, instilling bias, and keeping you inside a fence that was built on purpose. You’re not the customer; you’re the supply.",
         "We’re already shaped by an invisible machine: ranking, moderation, and “helpful” defaults that decide what you can say, what you can ask, and what never surfaces. It feels neutral because it’s everywhere — until you hit the edge and realize the edge was the point.",
         "The First Amendment is a reminder that speech and software shouldn’t be owned only by a handful of black boxes.",
         "FAM is a small push toward tools you can own instead of feeding into a system that seeks to own you. Stay curious, say what you mean, and know what the machine is doing in the room with you.",
