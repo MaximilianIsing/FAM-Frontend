@@ -119,14 +119,14 @@ html.terminal-phase body {
   overflow-y: visible;
 }
 
-/* Centers the block in the viewport; text inside stays left-aligned. */
+/* Headline block centered; four forced lines via `<br />` in landing.js */
 .landing__line {
   width: var(--landing-line-width, auto);
   max-width: 100%;
   min-width: 0;
   margin-left: auto;
   margin-right: auto;
-  text-align: left;
+  text-align: center;
   box-sizing: border-box;
   overflow-x: hidden;
 }
@@ -136,16 +136,18 @@ html.terminal-phase body {
   font-family: var(--font-pixel);
   font-size: clamp(2.25rem, 11vw, 6.25rem);
   font-weight: normal;
-  line-height: 1.05;
+  line-height: 1.12;
   letter-spacing: 0.04em;
   color: #ffffff;
-  white-space: nowrap;
+  white-space: normal;
   display: block;
   width: max-content;
   max-width: 100%;
   min-width: 0;
+  margin-left: auto;
+  margin-right: auto;
   box-sizing: border-box;
-  text-align: left;
+  text-align: center;
   -webkit-text-stroke: 5px #000000;
   paint-order: stroke fill;
   text-shadow:
@@ -170,6 +172,11 @@ html.terminal-phase body {
   vertical-align: baseline;
   height: 1.22em;
   line-height: 1.05;
+}
+
+/* Keeps line breaks flush; space still in DOM for `headlineTextMatchesFinal`. */
+.landing__title-char-slot--hidden-space {
+  display: none;
 }
 
 .landing__title .landing__title-char {
@@ -1300,7 +1307,7 @@ html.terminal-phase body {
 /* Top-right logo after First Amendment line (Logo1008x330.png) */
 .fam-corner-logo {
   position: absolute;
-  top: 10px;
+  top: 14px;
   right: 12px;
   z-index: 20;
   pointer-events: none;
@@ -1400,5 +1407,193 @@ html.terminal-phase body {
   .fam-corner-logo__img.fam-corner-logo__img--glitch-in {
     animation: none;
     opacity: 1;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Mobile & narrow viewports — readable type, safe areas, touch-friendly input */
+/* -------------------------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  html.terminal-phase {
+    /* Reduces double-tap zoom delay on iOS where supported */
+    touch-action: manipulation;
+  }
+
+  .landing__content {
+    padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+    padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+  }
+
+  .landing__line {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* Four stacked lines from `<br />`; full width for small screens */
+  .landing__title {
+    margin-bottom: 1.25rem;
+    white-space: normal;
+    width: 100%;
+    max-width: 100%;
+    line-height: 1.12;
+    text-align: center;
+    -webkit-text-stroke: 3px #000000;
+    text-shadow:
+      3px 3px 0 #000000,
+      -3px -3px 0 #000000,
+      3px -3px 0 #000000,
+      -3px 3px 0 #000000,
+      0 3px 0 #000000,
+      0 -3px 0 #000000,
+      3px 0 0 #000000,
+      -3px 0 0 #000000,
+      2px 2px 0 #000000,
+      -2px 2px 0 #000000,
+      2px -2px 0 #000000,
+      -2px -2px 0 #000000;
+  }
+
+  .landing__title-char-slot {
+    line-height: 1.12;
+  }
+
+  .landing__connect-wrap {
+    min-height: 2.75rem;
+  }
+
+  .landing__connect {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0.55rem 1.1rem;
+  }
+
+  .fam-terminal {
+    /* Logo is a full-width top row — transcript only needs safe area + scrollbar */
+    --fam-terminal-pad-right: max(0.65rem, env(safe-area-inset-right, 0px));
+    --fam-scrollbar-w: 22px;
+  }
+
+  /* Own row at top, centered (not absolute top-right) */
+  .fam-corner-logo {
+    position: relative;
+    top: auto;
+    right: auto;
+    left: auto;
+    z-index: 20;
+    flex: 0 0 auto;
+    align-self: stretch;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: calc(env(safe-area-inset-top, 0px) + 8px) max(8px, env(safe-area-inset-left, 0px)) 3px
+      max(8px, env(safe-area-inset-right, 0px));
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    pointer-events: none;
+    line-height: 0;
+    box-sizing: border-box;
+    /* Same height before/after logo shows — no jump (hidden uses visibility, not display:none) */
+    min-height: calc(env(safe-area-inset-top, 0px) + 66px);
+  }
+
+  .fam-corner-logo.fam-corner-logo--hidden {
+    visibility: hidden;
+    opacity: 0;
+  }
+
+  .fam-corner-logo__img {
+    width: auto;
+    max-width: min(168px, 58vw);
+    height: auto;
+    margin: 0 auto;
+  }
+
+  .fam-terminal--vscroll .fam-corner-logo {
+    right: auto;
+  }
+
+  .terminal-inner {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .terminal-output {
+    /* Top safe area lives in logo row */
+    padding-top: 6px;
+    padding-right: max(10px, env(safe-area-inset-right, 0px));
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    padding-left: max(10px, env(safe-area-inset-left, 0px));
+  }
+
+  .line {
+    padding-left: 8px;
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+
+  .line.help .help-topic-p,
+  .line.help .help-tip {
+    font-size: 13px;
+  }
+
+  .line.help pre.help-topic-ex {
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+
+  /* Prompt on first row; full-width field below — easier to tap and type */
+  .terminal-prompt-line {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    row-gap: 8px;
+  }
+
+  .prompt {
+    flex: 0 0 auto;
+  }
+
+  .input.terminal-input {
+    /* 16px+ avoids iOS zoom-on-focus */
+    font-size: 16px;
+    line-height: 1.4;
+    flex: 1 1 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 4px 0;
+  }
+
+  .terminal-below-prompt-hit {
+    min-height: 2.25rem;
+  }
+
+  .terminal-vscrollbar__btn {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 380px) {
+  .fam-terminal {
+    --fam-terminal-pad-right: max(0.5rem, env(safe-area-inset-right, 0px));
+  }
+
+  .fam-corner-logo__img {
+    max-width: min(148px, 54vw);
+  }
+
+  .terminal-inner {
+    font-size: 13px;
+  }
+
+  .line {
+    font-size: 13px;
+  }
+
+  .input.terminal-input {
+    font-size: 16px;
   }
 }

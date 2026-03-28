@@ -12,6 +12,11 @@
   const charset =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%&*+-";
 
+  /** Line breaks in headline (indices are 0-based into `finalText`). */
+  const HEADLINE_BREAK_AFTER_INDEX = new Set([9, 15, 25]);
+  /** Inter-word spaces hidden so `<br />` doesn’t leave a gap on the next row. */
+  const HEADLINE_HIDE_SPACE_INDEX = new Set([10, 16, 26]);
+
   function escapeHtmlChar(ch) {
     if (ch === "&") return "&amp;";
     if (ch === "<") return "&lt;";
@@ -117,8 +122,15 @@
         cls += c === " " ? " landing__title-char--plain" : " landing__title-char--pending";
       }
 
+      const hideSpace = c === " " && HEADLINE_HIDE_SPACE_INDEX.has(i);
+      const slotClass =
+        "landing__title-char-slot" +
+        (hideSpace ? " landing__title-char-slot--hidden-space" : "");
+
       html +=
-        '<span class="landing__title-char-slot">' +
+        '<span class="' +
+        slotClass +
+        '">' +
         '<span class="' +
         cls +
         '" style="transform:translateY(' +
@@ -128,6 +140,9 @@
         '">' +
         inner +
         "</span></span>";
+      if (HEADLINE_BREAK_AFTER_INDEX.has(i)) {
+        html += "<br />";
+      }
     }
     return html;
   }
@@ -136,6 +151,10 @@
     const line = document.querySelector(".landing__line");
     const content = document.querySelector(".landing__content");
     if (!line || !content) return;
+    if (window.matchMedia("(max-width: 640px)").matches) {
+      line.style.setProperty("--landing-line-width", "100%");
+      return;
+    }
     const cw = content.clientWidth;
     let w = 0;
     const headlineFinal =
@@ -143,15 +162,20 @@
     if (headlineFinal) {
       w = headline.scrollWidth;
     } else {
-      const measure = document.createElement("span");
-      measure.className = "landing__title";
-      measure.setAttribute("aria-hidden", "true");
-      measure.textContent = finalText;
-      measure.style.cssText =
-        "position:absolute;left:-9999px;top:0;white-space:nowrap;visibility:hidden;pointer-events:none;";
-      document.body.appendChild(measure);
-      w = measure.offsetWidth;
-      measure.remove();
+      const segments = ["Welcome to", "First", "Amendment", "Models"];
+      let maxW = 0;
+      for (let s = 0; s < segments.length; s++) {
+        const measure = document.createElement("span");
+        measure.className = "landing__title";
+        measure.setAttribute("aria-hidden", "true");
+        measure.textContent = segments[s];
+        measure.style.cssText =
+          "position:absolute;left:-9999px;top:0;white-space:nowrap;visibility:hidden;pointer-events:none;";
+        document.body.appendChild(measure);
+        maxW = Math.max(maxW, measure.offsetWidth);
+        measure.remove();
+      }
+      w = maxW;
     }
     const lineW = Math.min(w, cw);
     line.style.setProperty("--landing-line-width", lineW + "px");
