@@ -604,6 +604,14 @@
   /** Milliseconds between characters when animating system / assistant / error lines. */
   const TYPEWRITER_MS_PER_CHAR = 12;
 
+  /** Matches `@media (max-width: 640px)` terminal layout — use native scroll, not the DOM rail. */
+  function prefersNativeTerminalScrollbar() {
+    return (
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(max-width: 640px)").matches
+    );
+  }
+
   /** Custom DOM scrollbar + `fam-terminal--vscroll` when content overflows (logo clears the rail). */
   function syncTerminalScrollbar() {
     const sc = el.outputScroll;
@@ -613,6 +621,11 @@
     const track = el.terminalVscrollbarTrack;
     if (!sc || !wrap || !rail || !thumb || !track) return;
     requestAnimationFrame(() => {
+      if (prefersNativeTerminalScrollbar()) {
+        rail.hidden = true;
+        wrap.classList.remove("fam-terminal--vscroll");
+        return;
+      }
       const overflow = sc.scrollHeight > sc.clientHeight + 1;
       wrap.classList.toggle("fam-terminal--vscroll", overflow);
       if (!overflow) {
