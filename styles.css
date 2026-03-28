@@ -1522,9 +1522,8 @@ html.terminal-phase body {
   }
 
   .fam-terminal {
-    /* Logo is a full-width top row — transcript only needs safe area + scrollbar */
+    /* Logo is a full-width top row; native overflow scroll (no custom rail). */
     --fam-terminal-pad-right: max(0.65rem, env(safe-area-inset-right, 0px));
-    --fam-scrollbar-w: 22px;
   }
 
   /* Own row at top, centered (not absolute top-right) */
@@ -1578,6 +1577,18 @@ html.terminal-phase body {
     padding-right: max(10px, env(safe-area-inset-right, 0px));
     padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
     padding-left: max(10px, env(safe-area-inset-left, 0px));
+    scrollbar-width: thin;
+    -ms-overflow-style: auto;
+  }
+
+  .terminal-output::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+    display: block;
+  }
+
+  .terminal-vscrollbar {
+    display: none !important;
   }
 
   .line {
@@ -1620,10 +1631,6 @@ html.terminal-phase body {
 
   .terminal-below-prompt-hit {
     min-height: 2.25rem;
-  }
-
-  .terminal-vscrollbar__btn {
-    font-size: 11px;
   }
 }
 
