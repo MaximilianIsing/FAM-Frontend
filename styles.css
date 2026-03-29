@@ -30,6 +30,15 @@
   font-display: swap;
 }
 
+/* Same TTF as 400 — lets `font-weight: 700` resolve; browser may still synthesize. */
+@font-face {
+  font-family: "Pixellari";
+  src: url("/media/Font/pixellari/Pixellari.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 *,
 *::before,
 *::after {
@@ -858,7 +867,8 @@ html.terminal-phase body {
 /* Prompt + input: same surface as the buffer (no separate “bar”). */
 .terminal-prompt-line {
   display: flex;
-  align-items: baseline;
+  /* baseline + empty textarea = inconsistent flex baseline; placeholder rides up vs FAM> */
+  align-items: flex-start;
   gap: 6px;
   flex-shrink: 0;
   margin: 0;
@@ -913,6 +923,35 @@ html.terminal-phase body {
   /* Glow can extend past the box and widen scrollWidth; clip without hiding text. */
   overflow-x: hidden;
   text-shadow: 0 0 12px rgba(251, 191, 36, 0.18);
+}
+
+/* Boot “FAM” block art — monospace so █ / ░ columns line up (Pixellari is not fixed-pitch). */
+.line.system.line--ascii-banner {
+  font-family: var(--font-mono);
+  font-size: clamp(0.52rem, 1.65vw, 0.72rem);
+  line-height: 1.08;
+  letter-spacing: 0;
+  white-space: pre;
+  /* auto on x alone often forces overflow-y: auto too → stray vertical bar */
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  color: #c5e7ff;
+  text-shadow: 0 0 8px rgba(147, 197, 253, 0.2);
+}
+
+.line.system.line--ascii-banner .line__body {
+  display: block;
+  min-width: 0;
+  max-height: none;
+  overflow: visible;
+  overflow-wrap: normal;
+  word-break: normal;
+  white-space: inherit;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-shadow: inherit;
 }
 
 .line.error {
@@ -977,6 +1016,13 @@ html.terminal-phase body {
   color: #67e8f9;
   font-weight: 600;
   margin-right: 8px;
+  white-space: nowrap;
+}
+
+.line.assistant .line__body strong {
+  font-weight: 700;
+  font-family: var(--font-pixel);
+  color: inherit;
 }
 
 .line.help {
@@ -1258,6 +1304,7 @@ html.terminal-phase body {
   font-family: inherit;
   cursor: default;
   text-shadow: 0 0 10px rgba(134, 239, 172, 0.35);
+  line-height: 1.45;
 }
 
 .input.terminal-input {
@@ -1288,6 +1335,7 @@ html.terminal-phase body {
 .input.terminal-input::placeholder {
   color: #5a6d7a;
   opacity: 1;
+  line-height: inherit;
 }
 
 .generating .input.terminal-input {
@@ -1322,6 +1370,114 @@ html.terminal-phase body {
   pointer-events: none;
   line-height: 0;
   max-width: min(308px, 58.8vw);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Same vertical rhythm between logo, IP row, clock row, and health block. */
+  --fam-corner-stack-gap: 6px;
+  gap: var(--fam-corner-stack-gap);
+  /* Unitless ms step; used as calc(N * var * 1ms) for staggered glitch delays. */
+  --fam-corner-glitch-stagger-step: 60;
+}
+
+/* Desktop only — hidden on narrow / mobile layout (see media query below). */
+.fam-corner-connect {
+  line-height: 1.45;
+  font-family: var(--font-pixel);
+  font-size: 19px;
+  color: #8ba4b8;
+  text-align: center;
+  width: 100%;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 0 10px rgba(51, 154, 240, 0.15);
+}
+
+@media (max-width: 640px) {
+  .fam-corner-connect {
+    display: none !important;
+  }
+}
+
+/* Desktop only — same breakpoint as `.fam-corner-connect`. */
+.fam-corner-meta {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  line-height: 1.45;
+  font-family: var(--font-pixel);
+  font-size: 19px;
+  color: #8ba4b8;
+}
+
+.fam-corner-meta__time {
+  flex: 0 0 auto;
+}
+
+.fam-corner-meta__ping {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 640px) {
+  .fam-corner-meta {
+    display: none !important;
+  }
+}
+
+/* Desktop only — /health summary (two lines), same breakpoint as corner chrome. */
+.fam-corner-health {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--fam-corner-stack-gap, 6px);
+  width: 100%;
+  line-height: 1.45;
+  font-family: var(--font-pixel);
+  font-size: 19px;
+  color: #8ba4b8;
+  text-align: center;
+}
+
+.fam-corner-health__line {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fam-corner-health__line--split {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: baseline;
+  gap: 16px;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto;
+  text-align: left;
+}
+
+.fam-corner-health__mid,
+.fam-corner-health__up {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fam-corner-health__up {
+  text-align: left;
+}
+
+@media (max-width: 640px) {
+  .fam-corner-health {
+    display: none !important;
+  }
 }
 
 .fam-corner-logo--hidden {
@@ -1343,7 +1499,30 @@ html.terminal-phase body {
 /* Duration set from JS to match welcome-line typewriter: --fam-corner-glitch-ms */
 .fam-corner-logo__img.fam-corner-logo__img--glitch-in {
   animation: fam-corner-logo-glitch-in var(--fam-corner-glitch-ms, 400ms) linear forwards;
+  animation-delay: 0ms;
   animation-fill-mode: both;
+}
+
+/* Same glitch-in; stagger delays (logo → IP → meta → health) via --fam-corner-glitch-stagger-step */
+.fam-corner-connect.fam-corner-connect--glitch-in {
+  animation: fam-corner-logo-glitch-in var(--fam-corner-glitch-ms, 400ms) linear forwards;
+  animation-delay: calc(1 * var(--fam-corner-glitch-stagger-step, 60) * 1ms);
+  animation-fill-mode: both;
+  transform: translateZ(0);
+}
+
+.fam-corner-meta.fam-corner-meta--glitch-in {
+  animation: fam-corner-logo-glitch-in var(--fam-corner-glitch-ms, 400ms) linear forwards;
+  animation-delay: calc(2 * var(--fam-corner-glitch-stagger-step, 60) * 1ms);
+  animation-fill-mode: both;
+  transform: translateZ(0);
+}
+
+.fam-corner-health.fam-corner-health--glitch-in {
+  animation: fam-corner-logo-glitch-in var(--fam-corner-glitch-ms, 400ms) linear forwards;
+  animation-delay: calc(3 * var(--fam-corner-glitch-stagger-step, 60) * 1ms);
+  animation-fill-mode: both;
+  transform: translateZ(0);
 }
 
 @keyframes fam-corner-logo-glitch-in {
@@ -1413,8 +1592,12 @@ html.terminal-phase body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fam-corner-logo__img.fam-corner-logo__img--glitch-in {
+  .fam-corner-logo__img.fam-corner-logo__img--glitch-in,
+  .fam-corner-connect.fam-corner-connect--glitch-in,
+  .fam-corner-meta.fam-corner-meta--glitch-in,
+  .fam-corner-health.fam-corner-health--glitch-in {
     animation: none;
+    animation-delay: 0ms;
     opacity: 1;
   }
 }
@@ -1614,7 +1797,10 @@ html.terminal-phase body {
     gap: 6px;
   }
 
+  /* Match input metrics — inherited 14px/1.5 from .terminal-inner misaligned 16px/1.4 placeholder */
   .terminal-prompt-line .prompt {
+    font-size: 16px;
+    line-height: 1.4;
     padding-top: 0.35rem;
   }
 

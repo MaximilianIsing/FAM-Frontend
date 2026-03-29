@@ -22,6 +22,18 @@
   /** First-visit welcome (typed with corner logo); plain white via `.line--welcome-white`. */
   const BOOT_WELCOME_FAM_TEXT = "Welcome to First Amendment Models.";
 
+  /** Shown immediately after welcome / welcome-back (monospace via `.line--ascii-banner`). */
+  const BOOT_ASCII_BANNER = [
+    " ███████████      █████████      ██████   ██████   ",
+    "░░███░░░░░░█     ███░░░░░███    ░░██████ ██████    ",
+    " ░███   █ ░     ░███    ░███     ░███░█████░███    ",
+    " ░███████       ░███████████     ░███░░███ ░███    ",
+    " ░███░░░█       ░███░░░░░███     ░███ ░░░  ░███    ",
+    " ░███  ░        ░███    ░███     ░███      ░███    ",
+    " █████       ██ █████   █████ ██ █████     █████ ██",
+    "░░░░░       ░░ ░░░░░   ░░░░░ ░░ ░░░░░     ░░░░░ ░░ ",
+  ].join("\n");
+
   /** Shown right after the welcome line on first visit. */
   const BOOT_CONNECTION_NOTICE = [
     "You are connected to the flagship uncensored and untracked model.",
@@ -55,6 +67,9 @@
   /** Shown by /donate (Ethereum mainnet or your network of choice — verify before sending). */
   const DONATE_ETH_ADDRESS = "0x0ad71CEf14201B7fC7de53Ff2b4d40B9a96C2813";
 
+  /** Gutter label for assistant lines (same escaping style as user `FAM\\You&gt;`). */
+  const ASSISTANT_LABEL_HTML = '<span class="label">FAM\\Response&gt;</span>';
+
   const HELP = {
     help: "Usage: /help or /help {command} — list commands or full explanation + example.",
     this: "/this — Show the name of the current session (if any).",
@@ -80,11 +95,12 @@
     disablewarnings: "/disablewarnings — Skip Y/N confirmation prompts.",
     enablewarnings: "/enablewarnings — Turn confirmation prompts back on.",
     status: "/status — Ping the backend health endpoint.",
+    ping: "/ping — Measure round-trip to this site’s server (ms); updates the clock row in the corner.",
     whoami: "/whoami — Show your chosen name and public IP (via external lookup).",
     toadvanced:
       "/toadvanced — Switch to advanced mode (full commands, sessions, memory, and settings).",
     tosimple:
-      "/tosimple — Leave advanced mode; simple mode keeps /help, /clear, /cls, /status, /whoami, /toadvanced, /mode, /mission, /donate (no sessions or /new).",
+      "/tosimple — Leave advanced mode; simple mode keeps /help, /clear, /cls, /status, /ping, /whoami, /toadvanced, /mode, /mission, /donate (no sessions or /new).",
     mode: "/mode — Show whether you’re in simple or advanced mode.",
     mission:
       "/mission — Short note on why First Amendment Models exists (author’s words).",
@@ -128,6 +144,7 @@
     disablewarnings: "model",
     enablewarnings: "model",
     status: "system",
+    ping: "system",
     whoami: "system",
     toadvanced: "ui",
     tosimple: "ui",
@@ -296,6 +313,13 @@
       ],
       example: "/status",
     },
+    ping: {
+      paragraphs: [
+        "Sends a tiny request to this app’s server and reports round-trip time in milliseconds. On desktop, the same value appears under the corner logo next to your local clock.",
+        "The first measurement runs when the terminal loads; run /ping anytime to refresh after network changes.",
+      ],
+      example: "/ping",
+    },
     whoami: {
       paragraphs: [
         "Shows the display name you chose at first connect and attempts a public IP lookup via an external service (ipify) for quick diagnostics.",
@@ -312,7 +336,7 @@
     },
     tosimple: {
       paragraphs: [
-        "Switches to simple mode: one continuous chat thread, /clear for reset, no /new or session saves. Keeps /help, /cls, /status, /whoami, /mission, /donate, /mode, /toadvanced.",
+        "Switches to simple mode: one continuous chat thread, /clear for reset, no /new or session saves. Keeps /help, /cls, /status, /ping, /whoami, /mission, /donate, /mode, /toadvanced.",
         "Use when you don’t need named sessions or the heavier toolkit.",
       ],
       example: "/tosimple",
@@ -347,6 +371,7 @@
     "cls",
     "status",
     "whoami",
+    "ping",
     "toadvanced",
     "mode",
     "mission",
@@ -364,8 +389,12 @@
   /** @type {AbortController|null} */
   let genAbort = null;
   let generating = false;
+  /** `setInterval` for desktop `.fam-corner-meta` local clock ([HH:MM:SS]). */
+  let cornerMetaClockId = 0;
   /** Active typewriter animations (system / assistant / error / success lines). */
   let transcriptTypingDepth = 0;
+  /** Running `typeStringIntoElement` handles — Ctrl+C calls each `.skip()`. */
+  const activeTypewriters = new Set();
 
   /** @type {null | { type: string, data: Record<string, unknown> }} */
   let pendingConfirm = null;
@@ -389,6 +418,14 @@
     sessionBadge: document.getElementById("sessionBadge"),
     warnHint: document.getElementById("warnHint"),
     cornerLogo: document.getElementById("fam-corner-logo"),
+    cornerConnect: document.getElementById("fam-corner-connect"),
+    cornerMeta: document.getElementById("fam-corner-meta"),
+    cornerHealth: document.getElementById("fam-corner-health"),
+    cornerTime: document.getElementById("fam-corner-time"),
+    cornerPing: document.getElementById("fam-corner-ping"),
+    cornerHealthMid: document.getElementById("fam-corner-health-mid"),
+    cornerHealthUp: document.getElementById("fam-corner-health-up"),
+    cornerHealthL2: document.getElementById("fam-corner-health-l2"),
   };
 
   function loadSettings() {
@@ -489,14 +526,14 @@
     "Here's how simple mode works",
     "• Type in the line below to chat — one continuous thread with the model until you reset it.",
     "• /clear clears the transcript and starts a new conversation in place (there is no /new in simple mode).",
-    "• /help lists commands; /cls only wipes the screen; /status and /whoami check the backend and your name/IP; /toadvanced switches to advanced mode if you later want sessions and the full toolset.",
+    "• /help lists commands; /cls only wipes the screen; /status and /whoami check the backend and your name/IP; /ping refreshes round-trip time to the server (also shown under the logo on desktop); /toadvanced switches to advanced mode if you later want sessions and the full toolset.",
   ].join("\n");
 
   /** After picking advanced — how contexts and sessions map to slash commands. */
   const MODE_ADVANCED_PRIMER = [
     "Here's how advanced mode works",
     "• /new starts a fresh context; add a name to tie it to a session you can /store and /restore later. /sessions lists saves.",
-    "• /remember, /memory, and /forget manage notes the model can reuse; /whoami and /status are there for diagnostics.",
+    "• /remember, /memory, and /forget manage notes the model can reuse; /whoami, /status, and /ping are there for diagnostics.",
     "• /help is the full manual. /tosimple returns to the lighter chat-only mode anytime.",
   ].join("\n");
 
@@ -504,7 +541,7 @@
     if (getUiMode() === "simple") {
       await appendLine(
         "system",
-        "Commands start with /. Run /help. Just type to chat — one running thread until /clear.",
+        "Commands start with /. Run /help. Just type to chat. You have one running thread until /clear.",
         { animate: true }
       );
     } else {
@@ -603,6 +640,9 @@
 
   /** Milliseconds between characters when animating system / assistant / error lines. */
   const TYPEWRITER_MS_PER_CHAR = 12;
+  /** Banner: 0 ms + chunk + rAF — avoids setTimeout’s ~4ms floor per character. */
+  const BOOT_ASCII_TYPEWRITER_MS_PER_CHAR = 5;
+  const BOOT_ASCII_TYPEWRITER_CHUNK = 2;
 
   /** Matches `@media (max-width: 640px)` terminal layout — use native scroll, not the DOM rail. */
   function prefersNativeTerminalScrollbar() {
@@ -755,13 +795,29 @@
     el.input.readOnly = busy;
   }
 
+  async function appendBootAsciiBanner() {
+    if (
+      typeof window.matchMedia !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      appendLineInstant("system", BOOT_ASCII_BANNER, "line--ascii-banner");
+      return;
+    }
+    await appendLine("system", BOOT_ASCII_BANNER, {
+      className: "line--ascii-banner",
+      animate: true,
+      typewriterMsPerChar: BOOT_ASCII_TYPEWRITER_MS_PER_CHAR,
+      typewriterChunkSize: BOOT_ASCII_TYPEWRITER_CHUNK,
+    });
+  }
+
   function appendLineInstant(kind, text, className = "") {
     const div = document.createElement("div");
     div.className = `line ${kind} ${className}`.trim();
     if (kind === "user") {
       div.innerHTML = `<span class="label">FAM\\You&gt;</span>${escapeHtml(text)}`;
     } else if (kind === "assistant") {
-      div.innerHTML = `<span class="label">ai</span>${escapeHtml(text)}`;
+      div.innerHTML = `${ASSISTANT_LABEL_HTML}<span class="line__body">${formatAssistantBodyHtml(text)}</span>`;
     } else {
       div.textContent = text;
     }
@@ -769,19 +825,77 @@
     scrollOutputToBottom();
   }
 
-  function typeStringIntoElement(targetEl, fullText, onDone) {
+  function typeStringIntoElement(targetEl, fullText, onDone, msPerChar, chunkSize) {
+    const stepMs =
+      typeof msPerChar === "number" && Number.isFinite(msPerChar) && msPerChar >= 0
+        ? Math.max(0, msPerChar)
+        : TYPEWRITER_MS_PER_CHAR;
+    const chunk =
+      typeof chunkSize === "number" &&
+      Number.isFinite(chunkSize) &&
+      chunkSize >= 1
+        ? Math.min(512, Math.floor(chunkSize))
+        : 1;
     const s = String(fullText);
     let i = 0;
+    let timeoutId = null;
+    let rafId = 0;
+    let finished = false;
+
+    function clearTimers() {
+      if (timeoutId != null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      if (rafId !== 0) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+    }
+
+    function finishNormal() {
+      if (finished) return;
+      finished = true;
+      clearTimers();
+      activeTypewriters.delete(handle);
+      scrollOutputToBottom();
+      onDone();
+    }
+
+    function finishSkip() {
+      if (finished) return;
+      finished = true;
+      clearTimers();
+      activeTypewriters.delete(handle);
+      targetEl.textContent = s;
+      scrollOutputToBottom();
+      onDone();
+    }
+
+    const handle = { skip: finishSkip };
+    activeTypewriters.add(handle);
+
     function tick() {
+      timeoutId = null;
+      rafId = 0;
+      if (finished) return;
       if (i >= s.length) {
-        scrollOutputToBottom();
-        onDone();
+        finishNormal();
         return;
       }
-      targetEl.appendChild(document.createTextNode(s[i]));
-      i++;
+      const end = Math.min(s.length, i + chunk);
+      targetEl.appendChild(document.createTextNode(s.slice(i, end)));
+      i = end;
       scrollOutputToBottom();
-      setTimeout(tick, TYPEWRITER_MS_PER_CHAR);
+      if (i >= s.length) {
+        finishNormal();
+        return;
+      }
+      if (stepMs <= 0) {
+        rafId = requestAnimationFrame(tick);
+      } else {
+        timeoutId = setTimeout(tick, stepMs);
+      }
     }
     tick();
   }
@@ -789,17 +903,27 @@
   /**
    * @param {string} kind
    * @param {string} text
-   * @param {string | { className?: string; animate?: boolean }} [extra]
+   * @param {string | { className?: string; animate?: boolean; typewriterMsPerChar?: number; typewriterChunkSize?: number }} [extra]
    * @returns {Promise<void>}
    */
   function appendLine(kind, text, extra) {
     let className = "";
-    const options = { animate: false };
+    const options = {
+      animate: false,
+      typewriterMsPerChar: undefined,
+      typewriterChunkSize: undefined,
+    };
     if (typeof extra === "string") {
       className = extra;
     } else if (extra && typeof extra === "object") {
       if (typeof extra.className === "string") className = extra.className;
       if (typeof extra.animate === "boolean") options.animate = extra.animate;
+      if (typeof extra.typewriterMsPerChar === "number") {
+        options.typewriterMsPerChar = extra.typewriterMsPerChar;
+      }
+      if (typeof extra.typewriterChunkSize === "number") {
+        options.typewriterChunkSize = extra.typewriterChunkSize;
+      }
     }
 
     const shouldAnimate =
@@ -828,19 +952,34 @@
       const div = document.createElement("div");
       div.className = `line ${kind} ${className}`.trim();
       if (kind === "assistant") {
-        div.innerHTML = `<span class="label">ai</span>`;
+        div.innerHTML = ASSISTANT_LABEL_HTML;
         const body = document.createElement("span");
         body.className = "line__body";
         div.appendChild(body);
         el.output.appendChild(div);
-        typeStringIntoElement(body, text, finish);
+        typeStringIntoElement(
+          body,
+          text,
+          () => {
+            body.innerHTML = formatAssistantBodyHtml(text);
+            finish();
+          },
+          options.typewriterMsPerChar,
+          options.typewriterChunkSize
+        );
         return;
       }
       const body = document.createElement("span");
       body.className = "line__body";
       div.appendChild(body);
       el.output.appendChild(div);
-      typeStringIntoElement(body, text, finish);
+      typeStringIntoElement(
+        body,
+        text,
+        finish,
+        options.typewriterMsPerChar,
+        options.typewriterChunkSize
+      );
     });
   }
 
@@ -849,6 +988,68 @@
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
+  }
+
+  /** null = not computed yet */
+  let cachedPixellariBoldMeasuresWider = null;
+
+  /**
+   * Pixellari ships as one weight; browsers may synthesize bold. If bold width
+   * does not differ from normal, strip `**` only (no faux-strong).
+   */
+  function pixellariBoldMeasuresWider() {
+    if (cachedPixellariBoldMeasuresWider !== null) {
+      return cachedPixellariBoldMeasuresWider;
+    }
+    try {
+      if (typeof document === "undefined" || !document.createElement) {
+        cachedPixellariBoldMeasuresWider = true;
+        return true;
+      }
+      if (
+        document.fonts &&
+        typeof document.fonts.check === "function" &&
+        !document.fonts.check('16px "Pixellari"')
+      ) {
+        /* Font not ready yet — don’t cache false “no bold” from fallback metrics. */
+        return true;
+      }
+      const ctx = document.createElement("canvas").getContext("2d");
+      if (!ctx) {
+        cachedPixellariBoldMeasuresWider = true;
+        return true;
+      }
+      const sample = "Mgwm";
+      ctx.font = '16px "Pixellari", monospace';
+      const wNormal = ctx.measureText(sample).width;
+      ctx.font = '700 16px "Pixellari", monospace';
+      const wBold = ctx.measureText(sample).width;
+      cachedPixellariBoldMeasuresWider = wBold > wNormal * 1.008;
+      return cachedPixellariBoldMeasuresWider;
+    } catch {
+      cachedPixellariBoldMeasuresWider = true;
+      return true;
+    }
+  }
+
+  /**
+   * Bot text may use `**bold**`. HTML-escaped; balanced pairs become `<strong>` if bold
+   * is effective, else `**` are removed.
+   */
+  function formatAssistantBodyHtml(raw) {
+    const escaped = escapeHtml(String(raw));
+    if (!pixellariBoldMeasuresWider()) {
+      return escaped.replace(/\*\*/g, "");
+    }
+    const parts = escaped.split("**");
+    if (parts.length % 2 === 0) {
+      return escaped.replace(/\*\*/g, "");
+    }
+    let out = "";
+    for (let i = 0; i < parts.length; i++) {
+      out += i % 2 === 0 ? parts[i] : `<strong>${parts[i]}</strong>`;
+    }
+    return out;
   }
 
   /** Same wall-clock span as typing `BOOT_WELCOME_FAM_TEXT` (first char immediate). */
@@ -861,6 +1062,9 @@
   const RETURNING_USER_CORNER_LOGO_DELAY_MS = 320;
   const RETURNING_USER_CORNER_LOGO_GLITCH_MS = 780;
 
+  /** Delay between each corner row glitch (ms); total lead-in = 3 × step before health starts. */
+  const CORNER_GLITCH_STAGGER_STEP_MS = 60;
+
   /**
    * Corner logo glitches into the top-right.
    * @param {number} [glitchMsOverride] — animation length in ms; default matches first-boot welcome typing.
@@ -869,6 +1073,9 @@
     return new Promise((resolve) => {
       const wrap = el.cornerLogo;
       const img = wrap?.querySelector(".fam-corner-logo__img");
+      const connect = el.cornerConnect ?? wrap?.querySelector(".fam-corner-connect");
+      const meta = el.cornerMeta ?? wrap?.querySelector(".fam-corner-meta");
+      const health = el.cornerHealth ?? wrap?.querySelector(".fam-corner-health");
       if (!wrap || !img) {
         resolve();
         return;
@@ -891,6 +1098,13 @@
           ? Math.max(120, glitchMsOverride)
           : bootWelcomeFamTypewriterMs();
       wrap.style.setProperty("--fam-corner-glitch-ms", `${glitchMs}ms`);
+      wrap.style.setProperty(
+        "--fam-corner-glitch-stagger-step",
+        String(CORNER_GLITCH_STAGGER_STEP_MS)
+      );
+
+      const staggerMs = CORNER_GLITCH_STAGGER_STEP_MS;
+      const lastAnimated = health || meta || connect || img;
 
       let settled = false;
       const finish = (ev) => {
@@ -900,16 +1114,26 @@
         }
         if (settled) return;
         settled = true;
-        img.removeEventListener("animationend", finish);
+        lastAnimated.removeEventListener("animationend", finish);
         window.clearTimeout(fallback);
         resolve();
       };
-      const fallback = window.setTimeout(finish, glitchMs + 120);
-      img.removeEventListener("animationend", finish);
+      const fallbackMs = 3 * staggerMs + glitchMs + 120;
+      const fallback = window.setTimeout(finish, fallbackMs);
+      lastAnimated.removeEventListener("animationend", finish);
       img.classList.remove("fam-corner-logo__img--glitch-in");
+      if (connect) connect.classList.remove("fam-corner-connect--glitch-in");
+      if (meta) meta.classList.remove("fam-corner-meta--glitch-in");
+      if (health) health.classList.remove("fam-corner-health--glitch-in");
       void img.offsetWidth;
-      img.addEventListener("animationend", finish);
+      if (connect) void connect.offsetWidth;
+      if (meta) void meta.offsetWidth;
+      if (health) void health.offsetWidth;
+      lastAnimated.addEventListener("animationend", finish);
       img.classList.add("fam-corner-logo__img--glitch-in");
+      if (connect) connect.classList.add("fam-corner-connect--glitch-in");
+      if (meta) meta.classList.add("fam-corner-meta--glitch-in");
+      if (health) health.classList.add("fam-corner-health--glitch-in");
     });
   }
 
@@ -1593,22 +1817,131 @@
     updateWarnHint();
   }
 
-  async function cmdStatus() {
-    const tryUrl = CONFIG.baseUrl
-      ? `${CONFIG.baseUrl.replace(/\/$/, "")}/health`
-      : "/health";
-    appendLine("system", `Checking ${tryUrl} …`);
+  function famHealthUrl() {
+    const b = (CONFIG.baseUrl || "").replace(/\/$/, "");
+    return b ? `${b}/health` : "/health";
+  }
+
+  /**
+   * @returns {Promise<{ res: Response, text: string, json: object | null }>}
+   */
+  async function fetchFamHealthRaw() {
+    const res = await fetch(famHealthUrl(), {
+      method: "GET",
+      cache: "no-store",
+    });
+    const text = await res.text();
+    let json = null;
     try {
-      const res = await fetch(tryUrl, { method: "GET", cache: "no-store" });
+      json = JSON.parse(text);
+    } catch {
+      /* non-JSON body */
+    }
+    return { res, text, json };
+  }
+
+  /** Best-effort CUDA / device string from merged /health JSON (upstream fields spread in). */
+  function pickCudaDeviceLabel(j) {
+    if (!j || typeof j !== "object" || Array.isArray(j)) return null;
+    const strKeys = [
+      "cuda_device",
+      "cudaDevice",
+      "device_name",
+      "device",
+      "gpu_name",
+      "gpu",
+    ];
+    for (const k of strKeys) {
+      const v = j[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    if (typeof j.cuda_device === "number" && Number.isFinite(j.cuda_device)) {
+      return `device id ${j.cuda_device}`;
+    }
+    if (j.cuda_available === true || j.cuda === true) return "CUDA available";
+    return null;
+  }
+
+  function updateCornerHealthDisplay(res, json, text) {
+    const mid = el.cornerHealthMid;
+    const up = el.cornerHealthUp;
+    const l2 = el.cornerHealthL2;
+    if (!mid || !up || !l2) return;
+
+    mid.textContent = res.ok
+      ? `MID: Ok ${res.status}`
+      : `MID: Err ${res.status}`;
+
+    let upText = "UP: —";
+    if (json && typeof json === "object" && !Array.isArray(json)) {
+      const hasOk = typeof json.upstream_ok === "boolean";
+      const hasSt = typeof json.upstream_status === "number";
+      if (hasOk && hasSt) {
+        upText = `UP: ${json.upstream_ok ? "OK" : "no"}, HTTP ${json.upstream_status}`;
+      } else if (hasOk) {
+        upText = `UP: ${json.upstream_ok ? "OK" : "no"}`;
+      } else if (hasSt) {
+        upText = `UP: —, HTTP ${json.upstream_status}`;
+      }
+    }
+    up.textContent = upText;
+
+    let l2Text = "device: —";
+    if (json && typeof json === "object" && !Array.isArray(json)) {
+      const dev = pickCudaDeviceLabel(json);
+      if (dev) l2Text = `DEV: ${dev}`;
+      else if (json.model_configured === false) {
+        l2Text =
+          typeof json.detail === "string" && json.detail.trim()
+            ? json.detail.trim().slice(0, 140)
+            : "model API not configured";
+      } else if (typeof json.upstream_error === "string" && json.upstream_error) {
+        l2Text = json.upstream_error.trim().slice(0, 140);
+      }
+    } else if (text && text.trim()) {
+      l2Text = text.trim().slice(0, 140);
+    }
+    l2.textContent = l2Text;
+  }
+
+  function setCornerHealthLoading() {
+    if (el.cornerHealthMid) el.cornerHealthMid.textContent = "…";
+    if (el.cornerHealthUp) el.cornerHealthUp.textContent = "…";
+    if (el.cornerHealthL2) el.cornerHealthL2.textContent = "…";
+  }
+
+  function setCornerHealthFetchError(message) {
+    if (!el.cornerHealthMid || !el.cornerHealthUp || !el.cornerHealthL2) return;
+    el.cornerHealthMid.textContent = "MID: —";
+    el.cornerHealthUp.textContent = "UP: —";
+    el.cornerHealthL2.textContent = (message || "unreachable").slice(0, 140);
+  }
+
+  async function refreshCornerHealthDisplay() {
+    if (!el.cornerHealthMid || !el.cornerHealthUp || !el.cornerHealthL2) return;
+    setCornerHealthLoading();
+    try {
+      const { res, text, json } = await fetchFamHealthRaw();
+      updateCornerHealthDisplay(res, json, text);
+    } catch (e) {
+      setCornerHealthFetchError(e.message || "failed");
+    }
+  }
+
+  async function cmdStatus() {
+    appendLine("system", `Checking ${famHealthUrl()} …`);
+    try {
+      const { res, text, json } = await fetchFamHealthRaw();
+      updateCornerHealthDisplay(res, json, text);
       const ok = res.ok;
-      const body = await res.text();
       appendLine(
         ok ? "success" : "error",
         ok
-          ? `OK ${res.status} — ${body.slice(0, 200)}`
-          : `Unhealthy ${res.status} — ${body.slice(0, 200)}`
+          ? `OK ${res.status} — ${text.slice(0, 200)}`
+          : `Unhealthy ${res.status} — ${text.slice(0, 200)}`
       );
     } catch (e) {
+      setCornerHealthFetchError(e.message || "failed");
       appendLine(
         "error",
         `Health check failed: ${e.message}. Set CONFIG.baseUrl in app.js if your API is elsewhere.`
@@ -1623,7 +1956,7 @@
     }
     setUiMode("advanced");
     await appendLine("success", "Advanced mode on.");
-    await appendLine("system", MODE_ADVANCED_PRIMER);
+    await appendLine("system", MODE_ADVANCED_PRIMER, { animate: true });
   }
 
   async function cmdToSimple() {
@@ -1634,7 +1967,7 @@
     setUiMode("simple");
     applySimpleModeChatRules();
     await appendLine("success", "Simple mode on.");
-    await appendLine("system", MODE_SIMPLE_PRIMER);
+    await appendLine("system", MODE_SIMPLE_PRIMER, { animate: true });
   }
 
   function cmdMode() {
@@ -1663,22 +1996,106 @@
     }
   }
 
-  async function cmdWhoami() {
-    const dn = getDisplayName();
-    appendLine("system", "Looking up public IP…");
+  /** Same lookup as /whoami (ipify); used for corner chrome on desktop. */
+  async function fetchPublicIp() {
     try {
       const res = await fetch("https://api.ipify.org?format=json", {
         cache: "no-store",
       });
+      if (!res.ok) return null;
       const j = await res.json();
-      const ip = j.ip || JSON.stringify(j);
-      if (dn) {
-        appendLine("success", `${dn} — public IP: ${ip}`);
-      } else {
-        appendLine("success", `Public IP: ${ip} (set your name on first visit)`);
-      }
-    } catch (e) {
-      appendLine("error", `Could not fetch IP: ${e.message}`);
+      return typeof j.ip === "string" ? j.ip : null;
+    } catch {
+      return null;
+    }
+  }
+
+  const FAM_CONNECT_HOST = "216.24.57.1";
+
+  function setCornerConnectText(ipLabel) {
+    const node = el.cornerConnect;
+    if (!node) return;
+    node.textContent = `${ipLabel} connected to ${FAM_CONNECT_HOST}`;
+  }
+
+  async function refreshCornerConnectLine() {
+    if (!el.cornerConnect) return;
+    setCornerConnectText("…");
+    const ip = await fetchPublicIp();
+    setCornerConnectText(ip || "—");
+  }
+
+  function famPingUrl() {
+    const b = (CONFIG.baseUrl || "").replace(/\/$/, "");
+    return b ? `${b}/api/ping` : "/api/ping";
+  }
+
+  /** Round-trip to this app’s server (GET /api/ping). */
+  async function measureFamServerPingMs() {
+    const url = famPingUrl();
+    const t0 = performance.now();
+    try {
+      const res = await fetch(url, { method: "GET", cache: "no-store" });
+      if (!res.ok) return null;
+      await res.json();
+      return Math.round(performance.now() - t0);
+    } catch {
+      return null;
+    }
+  }
+
+  function setCornerPingLabel(ms) {
+    const n = el.cornerPing;
+    if (!n) return;
+    n.textContent =
+      ms != null && Number.isFinite(ms) ? `${Math.round(ms)} ms` : "—";
+  }
+
+  async function refreshCornerPingDisplay() {
+    if (!el.cornerPing) return;
+    el.cornerPing.textContent = "…";
+    const ms = await measureFamServerPingMs();
+    setCornerPingLabel(ms);
+  }
+
+  function updateCornerTimeDisplay() {
+    const n = el.cornerTime;
+    if (!n) return;
+    const now = new Date();
+    const pad = (x) => String(x).padStart(2, "0");
+    n.textContent = `[${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}]`;
+  }
+
+  function startCornerMetaClock() {
+    if (!el.cornerTime || cornerMetaClockId) return;
+    updateCornerTimeDisplay();
+    cornerMetaClockId = window.setInterval(updateCornerTimeDisplay, 1000);
+  }
+
+  async function cmdWhoami() {
+    const dn = getDisplayName();
+    appendLine("system", "Looking up IP…");
+    const ip = await fetchPublicIp();
+    if (ip == null) {
+      appendLine("error", "Could not fetch IP (network or lookup failed).");
+      return;
+    }
+    if (dn) {
+      appendLine("success", `${dn} from ${ip}`);
+    } else {
+      appendLine("success", `Public IP: ${ip} (set your name on first visit)`);
+    }
+  }
+
+  async function cmdPing() {
+    if (el.cornerPing) el.cornerPing.textContent = "…";
+    appendLine("system", "Measuring round-trip to server…");
+    const ms = await measureFamServerPingMs();
+    setCornerPingLabel(ms);
+    if (ms == null) {
+      appendLine("error", "Ping failed (network or server unreachable).");
+    } else {
+      appendLine("success", `Server ping: ${ms} ms`);
     }
   }
 
@@ -1743,6 +2160,9 @@
       enablewarnings: () => cmdEnableWarnings(),
       status: () => {
         cmdStatus();
+      },
+      ping: () => {
+        void cmdPing();
       },
       whoami: () => {
         cmdWhoami();
@@ -1866,7 +2286,7 @@
 
       assistantDiv = document.createElement("div");
       assistantDiv.className = "line assistant";
-      assistantDiv.innerHTML = `<span class="label">ai</span>`;
+      assistantDiv.innerHTML = ASSISTANT_LABEL_HTML;
       assistantBody = document.createElement("span");
       assistantBody.className = "line__body";
       assistantDiv.appendChild(assistantBody);
@@ -1999,24 +2419,22 @@
       if (donePayload && typeof donePayload === "object") {
         const serverReply =
           typeof donePayload.reply === "string" ? donePayload.reply : "";
-        const visible = assistantBody.textContent;
         const reply =
-          serverReply.length > 0 ? serverReply : visible;
+          serverReply.length > 0 ? serverReply : assistantBody.textContent;
         if (!reply.trim()) {
           assistantDiv.remove();
           throw new Error("Empty model reply");
         }
         messages.push({ role: "assistant", content: reply });
-        if (serverReply.length > 0 && visible !== serverReply) {
-          assistantBody.textContent = "";
-          assistantBody.append(document.createTextNode(serverReply));
-        }
+        assistantBody.innerHTML = formatAssistantBodyHtml(reply);
         scrollOutputToBottom();
       } else if (assistantBody.textContent.trim()) {
+        const content = assistantBody.textContent;
         messages.push({
           role: "assistant",
-          content: assistantBody.textContent,
+          content,
         });
+        assistantBody.innerHTML = formatAssistantBodyHtml(content);
         scrollOutputToBottom();
       } else {
         assistantDiv.remove();
@@ -2033,6 +2451,7 @@
       if (e.name === "AbortError") {
         const partial = assistantBody && assistantBody.textContent.trim();
         if (partial) {
+          assistantBody.innerHTML = formatAssistantBodyHtml(partial);
           messages.push({ role: "assistant", content: partial });
         } else if (assistantDiv) {
           assistantDiv.remove();
@@ -2041,6 +2460,7 @@
       } else {
         const partial = assistantBody && assistantBody.textContent.trim();
         if (partial) {
+          assistantBody.innerHTML = formatAssistantBodyHtml(partial);
           messages.push({ role: "assistant", content: partial });
         } else if (assistantDiv) {
           assistantDiv.remove();
@@ -2079,13 +2499,14 @@
         const allowDuringName =
           c0 === "help" ||
           c0 === "whoami" ||
+          c0 === "ping" ||
           c0 === "mission" ||
           c0 === "donate";
         if (!allowDuringName) {
           appendUserEcho(parsedEarly.raw);
           appendLine(
             "system",
-            "First, type what you’d like to be called (no slash at the start). /help and /whoami work meanwhile."
+            "First, type what you’d like to be called (no slash at the start). /help, /whoami, and /ping work meanwhile."
           );
           return;
         }
@@ -2124,13 +2545,14 @@
         const allowDuringMode =
           c0 === "help" ||
           c0 === "whoami" ||
+          c0 === "ping" ||
           c0 === "mission" ||
           c0 === "donate";
         if (!allowDuringMode) {
           appendUserEcho(parsedMode.raw);
           appendLine(
             "system",
-            "Reply with simple or advanced first. /help and /whoami still work."
+            "Reply with simple or advanced first. /help, /whoami, and /ping still work."
           );
           return;
         }
@@ -2153,10 +2575,10 @@
       if (choice === "simple") {
         applySimpleModeChatRules();
         await appendLine("success", "Simple mode on.");
-        await appendLine("system", MODE_SIMPLE_PRIMER);
+        await appendLine("system", MODE_SIMPLE_PRIMER, { animate: true });
       } else {
         await appendLine("success", "Advanced mode on.");
-        await appendLine("system", MODE_ADVANCED_PRIMER);
+        await appendLine("system", MODE_ADVANCED_PRIMER, { animate: true });
       }
       return;
     }
@@ -2183,7 +2605,15 @@
   }
 
   function onKeyDown(ev) {
-    if (ev.key === "c" && ev.ctrlKey && generating && genAbort) {
+    if (ev.key !== "c" || !ev.ctrlKey) return;
+    if (activeTypewriters.size > 0) {
+      ev.preventDefault();
+      for (const h of [...activeTypewriters]) {
+        h.skip();
+      }
+      return;
+    }
+    if (generating && genAbort) {
       ev.preventDefault();
       genAbort.abort();
     }
@@ -2234,11 +2664,35 @@
 
   async function boot() {
     document.title = "F.A.M.";
+    if (document.fonts && document.fonts.ready) {
+      void document.fonts.ready.then(() => {
+        cachedPixellariBoldMeasuresWider = null;
+      });
+    }
     loadSettings();
     updateBadge();
     updateWarnHint();
 
     el.output.innerHTML = "";
+
+    /* Before any boot `await` so Ctrl+C can skip early animations (e.g. First Amendment quote). */
+    el.form.addEventListener("submit", (e) => onSubmit(e));
+    el.input.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      if (e.shiftKey) return;
+      if (e.isComposing || e.keyCode === 229) return;
+      e.preventDefault();
+      el.form.requestSubmit();
+    });
+    document.addEventListener("keydown", onKeyDown, true);
+    if (el.terminal) {
+      el.terminal.addEventListener("pointerdown", onTerminalPointerDownCapture, true);
+    }
+    initTerminalScrollbarSync();
+    void refreshCornerConnectLine();
+    startCornerMetaClock();
+    void refreshCornerPingDisplay();
+    void refreshCornerHealthDisplay();
 
     const storedDisplayName = getDisplayName();
     if (!storedDisplayName) {
@@ -2252,6 +2706,7 @@
           animate: true,
         }),
       ]);
+      await appendBootAsciiBanner();
       await appendLine("system", BOOT_CONNECTION_NOTICE, { animate: true });
       await appendLine("system", "What would you like to be called?", {
         animate: true,
@@ -2266,6 +2721,7 @@
       await appendLine("system", `Welcome back, ${storedDisplayName}.`, {
         animate: true,
       });
+      await appendBootAsciiBanner();
       if (getUiMode() === null) {
         await promptModeChoice();
       } else {
@@ -2274,19 +2730,6 @@
       }
     }
 
-    el.form.addEventListener("submit", (e) => onSubmit(e));
-    el.input.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter") return;
-      if (e.shiftKey) return;
-      if (e.isComposing || e.keyCode === 229) return;
-      e.preventDefault();
-      el.form.requestSubmit();
-    });
-    document.addEventListener("keydown", onKeyDown);
-    if (el.terminal) {
-      el.terminal.addEventListener("pointerdown", onTerminalPointerDownCapture, true);
-    }
-    initTerminalScrollbarSync();
     el.input.focus();
   }
 
