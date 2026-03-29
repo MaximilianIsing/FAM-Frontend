@@ -166,8 +166,22 @@ app.use(
 /** Web UI: index.html, app.js, styles.css */
 app.use(express.static(ROOT, { index: "index.html" }));
 
+/**
+ * /health calls the upstream model — cap per IP so it can’t be abused as a DoS amplifier.
+ * Override: HEALTH_RATE_LIMIT_WINDOW_MS, HEALTH_RATE_LIMIT_MAX.
+ */
+const healthLimiter = rateLimit({
+  windowMs: Math.max(60_000, Number(process.env.HEALTH_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000),
+  limit: Math.max(5, Number(process.env.HEALTH_RATE_LIMIT_MAX) || 120),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    error: "Too many health checks from this address. Please wait before retrying.",
+  },
+});
+
 /** Health: local proxy + upstream model (GET /v1/health or /health on FastAPI). */
-app.get("/health", async (req, res) => {
+app.get("/health", healthLimiter, async (req, res) => {
   const base = {
     ok: true,
     service: "fam-agent",
@@ -207,7 +221,7 @@ app.get("/health", async (req, res) => {
 });
 
 /**
- * Soft per-IP cap on expensive API routes only (not /health or static assets).
+ * Soft per-IP cap on /api/* (chat, stream, abort, ping).
  * Defaults are intentionally loose — safety net, not a product limit.
  * Override: RATE_LIMIT_WINDOW_MS (ms), RATE_LIMIT_MAX (requests per window per IP).
  */
@@ -221,6 +235,12 @@ const apiLimiter = rateLimit({
   },
 });
 app.use("/api", apiLimiter);
+
+/** Same-origin RTT probe for the UI; does not call the upstream model (still /api — uses apiLimiter). */
+app.get("/api/ping", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ ok: true });
+});
 
 /** Non-streaming chat → POST /v1/chat */
 app.post("/api/chat", async (req, res) => {
