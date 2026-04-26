@@ -395,6 +395,13 @@
   let transcriptTypingDepth = 0;
   /** Running `typeStringIntoElement` handles — Ctrl+C calls each `.skip()`. */
   const activeTypewriters = new Set();
+  /**
+   * While SSE char-typewriter lags, tab-back calls this to paint `streamTextFromModel`.
+   * Set only during `simulateAIResponse`; cleared in `finally`.
+   * @type {null | (() => void)}
+   */
+  let streamTabFlush = null;
+  let tabFocusFlushListenerAdded = false;
 
   /** @type {null | { type: string, data: Record<string, unknown> }} */
   let pendingConfirm = null;
@@ -694,6 +701,29 @@
     });
   }
 
+  /** If the user is within this many px of the bottom, new transcript lines may auto-scroll. */
+  const OUTPUT_STICKY_BOTTOM_PX = 80;
+
+  function isOutputNearBottom() {
+    const sc = el.outputScroll;
+    if (!sc) return true;
+    const dist = sc.scrollHeight - sc.clientHeight - sc.scrollTop;
+    return dist <= OUTPUT_STICKY_BOTTOM_PX;
+  }
+
+  /**
+   * After growing the transcript, only jump to the bottom if the user was already
+   * following the end (keeps manual scroll position while reading history).
+   * @param {boolean} wasNearBottom from `isOutputNearBottom()` **before** the DOM change
+   */
+  function scrollOutputToBottomIfPinned(wasNearBottom) {
+    const sc = el.outputScroll;
+    if (wasNearBottom && sc) {
+      sc.scrollTop = sc.scrollHeight;
+    }
+    syncTerminalScrollbar();
+  }
+
   function scrollOutputToBottom() {
     const sc = el.outputScroll;
     if (sc) sc.scrollTop = sc.scrollHeight;
@@ -821,8 +851,92 @@
     } else {
       div.textContent = text;
     }
+    const pinBefore = isOutputNearBottom();
     el.output.appendChild(div);
-    scrollOutputToBottom();
+    if (kind === "user") {
+      scrollOutputToBottom();
+    } else {
+      scrollOutputToBottomIfPinned(pinBefore);
+    }
+  }
+
+  function typeAssistantBodyIntoElement(targetEl, fullText, onDone, msPerChar, chunkSize) {
+    const stepMs =
+      typeof msPerChar === "number" && Number.isFinite(msPerChar) && msPerChar >= 0
+        ? Math.max(0, msPerChar)
+        : TYPEWRITER_MS_PER_CHAR;
+    const chunk =
+      typeof chunkSize === "number" &&
+      Number.isFinite(chunkSize) &&
+      chunkSize >= 1
+        ? Math.min(512, Math.floor(chunkSize))
+        : 1;
+    const s = String(fullText);
+    let i = 0;
+    let timeoutId = null;
+    let rafId = 0;
+    let finished = false;
+    let built = "";
+
+    function clearTimers() {
+      if (timeoutId != null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      if (rafId !== 0) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+    }
+
+    function finishNormal() {
+      if (finished) return;
+      finished = true;
+      clearTimers();
+      activeTypewriters.delete(handle);
+      syncTerminalScrollbar();
+      onDone();
+    }
+
+    function finishSkip() {
+      if (finished) return;
+      finished = true;
+      clearTimers();
+      activeTypewriters.delete(handle);
+      const pinBefore = isOutputNearBottom();
+      targetEl.innerHTML = formatAssistantBodyHtml(s);
+      scrollOutputToBottomIfPinned(pinBefore);
+      onDone();
+    }
+
+    const handle = { skip: finishSkip, flush: finishSkip };
+    activeTypewriters.add(handle);
+
+    function tick() {
+      timeoutId = null;
+      rafId = 0;
+      if (finished) return;
+      if (i >= s.length) {
+        finishNormal();
+        return;
+      }
+      const end = Math.min(s.length, i + chunk);
+      const pinBefore = isOutputNearBottom();
+      built = s.slice(0, end);
+      targetEl.innerHTML = formatAssistantBodyHtmlForTyping(built);
+      i = end;
+      scrollOutputToBottomIfPinned(pinBefore);
+      if (i >= s.length) {
+        finishNormal();
+        return;
+      }
+      if (stepMs <= 0) {
+        rafId = requestAnimationFrame(tick);
+      } else {
+        timeoutId = setTimeout(tick, stepMs);
+      }
+    }
+    tick();
   }
 
   function typeStringIntoElement(targetEl, fullText, onDone, msPerChar, chunkSize) {
@@ -858,7 +972,7 @@
       finished = true;
       clearTimers();
       activeTypewriters.delete(handle);
-      scrollOutputToBottom();
+      syncTerminalScrollbar();
       onDone();
     }
 
@@ -867,12 +981,13 @@
       finished = true;
       clearTimers();
       activeTypewriters.delete(handle);
+      const pinBefore = isOutputNearBottom();
       targetEl.textContent = s;
-      scrollOutputToBottom();
+      scrollOutputToBottomIfPinned(pinBefore);
       onDone();
     }
 
-    const handle = { skip: finishSkip };
+    const handle = { skip: finishSkip, flush: finishSkip };
     activeTypewriters.add(handle);
 
     function tick() {
@@ -884,9 +999,10 @@
         return;
       }
       const end = Math.min(s.length, i + chunk);
+      const pinBefore = isOutputNearBottom();
       targetEl.appendChild(document.createTextNode(s.slice(i, end)));
       i = end;
-      scrollOutputToBottom();
+      scrollOutputToBottomIfPinned(pinBefore);
       if (i >= s.length) {
         finishNormal();
         return;
@@ -898,6 +1014,23 @@
       }
     }
     tick();
+  }
+
+  /**
+   * Throttled background timers; on tab return catch up to latest buffered text.
+   */
+  function flushPendingChunksOnTabFocus() {
+    if (document.visibilityState !== "visible") return;
+    if (streamTabFlush) {
+      try {
+        streamTabFlush();
+      } catch {
+        /* ignore */
+      }
+    }
+    for (const h of [...activeTypewriters]) {
+      if (typeof h.flush === "function") h.flush();
+    }
   }
 
   /**
@@ -957,7 +1090,7 @@
         body.className = "line__body";
         div.appendChild(body);
         el.output.appendChild(div);
-        typeStringIntoElement(
+        typeAssistantBodyIntoElement(
           body,
           text,
           () => {
@@ -1033,21 +1166,91 @@
   }
 
   /**
-   * Bot text may use `**bold**`. HTML-escaped; balanced pairs become `<strong>` if bold
-   * is effective, else `**` are removed.
+   * When the font can’t show real bold, drop `*…*` and `**…**` marker pairs so text stays readable.
+   * @param {string} escaped
+   * @returns {string}
+   */
+  function stripAsteriskBoldMarkers(escaped) {
+    let s = escaped;
+    s = s.replace(/(?<!\*)\*([^*]*?)\*(?!\*)/g, "$1");
+    s = s.replace(/\*\*/g, "");
+    return s;
+  }
+
+  /**
+   * In one segment of the outer `**…**` split, turn `*inner*` into `<strong>…</strong>`.
+   * Does not look for `**` (parent split already removed those delimiters).
+   * @param {string} segment
+   * @param {boolean} forTyping unbalanced / trailing `*` is treated as in-progress bold
+   * @returns {string}
+   */
+  function formatSingleAsterisksInSegment(segment, forTyping) {
+    if (segment.length === 0 || !segment.includes("*")) {
+      return segment;
+    }
+    const parts = segment.split("*");
+    const n = parts.length;
+    if (n === 1) {
+      return segment;
+    }
+    if (!forTyping) {
+      if (n % 2 === 0) {
+        return segment;
+      }
+    }
+    let o = "";
+    for (let i = 0; i < n; i++) {
+      o += i % 2 === 0 ? parts[i] : `<strong>${parts[i]}</strong>`;
+    }
+    return o;
+  }
+
+  /**
+   * Bot text may use `**bold**` or `*bold*` (e.g. `* finances *`). HTML-escaped; `**` wraps
+   * run first, then `*` pairs per segment, become `<strong>` if bold is effective, else
+   * markers are stripped.
    */
   function formatAssistantBodyHtml(raw) {
     const escaped = escapeHtml(String(raw));
     if (!pixellariBoldMeasuresWider()) {
-      return escaped.replace(/\*\*/g, "");
+      return stripAsteriskBoldMarkers(escaped);
     }
     const parts = escaped.split("**");
     if (parts.length % 2 === 0) {
-      return escaped.replace(/\*\*/g, "");
+      return stripAsteriskBoldMarkers(escaped);
     }
     let out = "";
     for (let i = 0; i < parts.length; i++) {
-      out += i % 2 === 0 ? parts[i] : `<strong>${parts[i]}</strong>`;
+      if (i % 2 === 0) {
+        out += formatSingleAsterisksInSegment(parts[i], false);
+      } else {
+        out += `<strong>${formatSingleAsterisksInSegment(parts[i], false)}</strong>`;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Same as `formatAssistantBodyHtml` but while text is still growing (e.g. stream
+   * or typewriter). Unclosed `**…` and trailing / unclosed `*…` are still shown in `<strong>`.
+   */
+  function formatAssistantBodyHtmlForTyping(raw) {
+    const escaped = escapeHtml(String(raw));
+    if (!pixellariBoldMeasuresWider()) {
+      return stripAsteriskBoldMarkers(escaped);
+    }
+    const parts = escaped.split("**");
+    const n = parts.length;
+    if (n <= 1) {
+      return formatSingleAsterisksInSegment(parts[0] ?? "", true);
+    }
+    let out = "";
+    for (let i = 0; i < n; i++) {
+      if (i % 2 === 0) {
+        out += formatSingleAsterisksInSegment(parts[i], true);
+      } else {
+        out += `<strong>${formatSingleAsterisksInSegment(parts[i], true)}</strong>`;
+      }
     }
     return out;
   }
@@ -1266,8 +1469,9 @@
       const div = document.createElement("div");
       div.className = "line help";
       div.innerHTML = html;
+      const pinBefore = isOutputNearBottom();
       el.output.appendChild(div);
-      scrollOutputToBottom();
+      scrollOutputToBottomIfPinned(pinBefore);
       return;
     }
     const key = Object.keys(HELP).find((k) => k === t);
@@ -1287,8 +1491,9 @@
       const div = document.createElement("div");
       div.className = "line help";
       div.innerHTML = formatHelpTopicHtml(key, topicDetail);
+      const pinBefore = isOutputNearBottom();
       el.output.appendChild(div);
-      scrollOutputToBottom();
+      scrollOutputToBottomIfPinned(pinBefore);
       return;
     }
     appendLine("system", HELP[key]);
@@ -2198,15 +2403,6 @@
     }).catch(() => {});
   }
 
-  let streamScrollRafId = 0;
-  function scheduleStreamScroll() {
-    if (streamScrollRafId) return;
-    streamScrollRafId = requestAnimationFrame(() => {
-      streamScrollRafId = 0;
-      scrollOutputToBottom();
-    });
-  }
-
   /**
    * Split buffer on newlines; parse `data: {json}` lines. `rest` has no complete line yet.
    * @param {string} buf
@@ -2237,6 +2433,7 @@
     genAbort = new AbortController();
     const signal = genAbort.signal;
     generating = true;
+    streamTabFlush = null;
     el.terminal.classList.add("generating");
     updateTranscriptTypingUi();
 
@@ -2248,6 +2445,10 @@
     /** @type {HTMLSpanElement | null} */
     let assistantBody = null;
     let pendingFromStream = "";
+    /** Cumulative `text` from the stream (preserves `**` for history; may run ahead of display). */
+    let streamTextFromModel = "";
+    /** Prefix actually painted when char-typewriter lags. */
+    let streamDisplayPrefix = "";
     /** @type {ReturnType<typeof setTimeout> | null} */
     let typeTimeoutId = null;
     let sseTextComplete = false;
@@ -2290,10 +2491,13 @@
       assistantBody = document.createElement("span");
       assistantBody.className = "line__body";
       assistantDiv.appendChild(assistantBody);
+      const pinBeforeNewAssistant = isOutputNearBottom();
       el.output.appendChild(assistantDiv);
-      scrollOutputToBottom();
+      scrollOutputToBottomIfPinned(pinBeforeNewAssistant);
 
       pendingFromStream = "";
+      streamTextFromModel = "";
+      streamDisplayPrefix = "";
       if (typeTimeoutId != null) {
         clearTimeout(typeTimeoutId);
         typeTimeoutId = null;
@@ -2318,8 +2522,10 @@
         if (pendingFromStream.length === 0) return;
         const ch = pendingFromStream[0];
         pendingFromStream = pendingFromStream.slice(1);
-        assistantBody.append(document.createTextNode(ch));
-        scheduleStreamScroll();
+        const pinBefore = isOutputNearBottom();
+        streamDisplayPrefix += ch;
+        assistantBody.innerHTML = formatAssistantBodyHtmlForTyping(streamDisplayPrefix);
+        scrollOutputToBottomIfPinned(pinBefore);
         if (pendingFromStream.length > 0) {
           typeTimeoutId = setTimeout(pumpTypewriter, TYPEWRITER_MS_PER_CHAR);
         }
@@ -2327,9 +2533,14 @@
 
       function enqueueStreamText(s) {
         if (!s || !assistantBody) return;
+        streamTextFromModel += s;
         if (!useCharTyping) {
-          assistantBody.append(document.createTextNode(s));
-          scheduleStreamScroll();
+          const pinBefore = isOutputNearBottom();
+          streamDisplayPrefix = streamTextFromModel;
+          assistantBody.innerHTML = formatAssistantBodyHtmlForTyping(
+            streamDisplayPrefix
+          );
+          scrollOutputToBottomIfPinned(pinBefore);
           return;
         }
         pendingFromStream += s;
@@ -2337,6 +2548,39 @@
           pumpTypewriter();
         }
       }
+
+      streamTabFlush = () => {
+        if (document.visibilityState !== "visible") return;
+        if (!assistantBody) return;
+        if (!useCharTyping) {
+          if (streamDisplayPrefix !== streamTextFromModel) {
+            const pinB = isOutputNearBottom();
+            streamDisplayPrefix = streamTextFromModel;
+            assistantBody.innerHTML = formatAssistantBodyHtmlForTyping(
+              streamDisplayPrefix
+            );
+            scrollOutputToBottomIfPinned(pinB);
+          }
+          return;
+        }
+        if (
+          pendingFromStream.length === 0 &&
+          streamDisplayPrefix === streamTextFromModel
+        ) {
+          return;
+        }
+        if (typeTimeoutId != null) {
+          clearTimeout(typeTimeoutId);
+          typeTimeoutId = null;
+        }
+        pendingFromStream = "";
+        streamDisplayPrefix = streamTextFromModel;
+        const pinB = isOutputNearBottom();
+        assistantBody.innerHTML = formatAssistantBodyHtmlForTyping(
+          streamDisplayPrefix
+        );
+        scrollOutputToBottomIfPinned(pinB);
+      };
 
       async function drainStreamTypewriter() {
         while (true) {
@@ -2420,22 +2664,28 @@
         const serverReply =
           typeof donePayload.reply === "string" ? donePayload.reply : "";
         const reply =
-          serverReply.length > 0 ? serverReply : assistantBody.textContent;
+          serverReply.length > 0 ? serverReply : streamTextFromModel;
         if (!reply.trim()) {
           assistantDiv.remove();
           throw new Error("Empty model reply");
         }
         messages.push({ role: "assistant", content: reply });
-        assistantBody.innerHTML = formatAssistantBodyHtml(reply);
-        scrollOutputToBottom();
-      } else if (assistantBody.textContent.trim()) {
-        const content = assistantBody.textContent;
+        {
+          const pinBefore = isOutputNearBottom();
+          assistantBody.innerHTML = formatAssistantBodyHtml(reply);
+          scrollOutputToBottomIfPinned(pinBefore);
+        }
+      } else if (streamTextFromModel.trim() || assistantBody.textContent.trim()) {
+        const content = streamTextFromModel.trim() || assistantBody.textContent;
         messages.push({
           role: "assistant",
           content,
         });
-        assistantBody.innerHTML = formatAssistantBodyHtml(content);
-        scrollOutputToBottom();
+        {
+          const pinBefore = isOutputNearBottom();
+          assistantBody.innerHTML = formatAssistantBodyHtml(content);
+          scrollOutputToBottomIfPinned(pinBefore);
+        }
       } else {
         assistantDiv.remove();
         throw new Error("Stream ended without a reply");
@@ -2448,26 +2698,28 @@
         }
         pendingFromStream = "";
       }
+      const partialRaw =
+        (streamTextFromModel && streamTextFromModel.trim()) ||
+        (assistantBody && assistantBody.textContent.trim());
       if (e.name === "AbortError") {
-        const partial = assistantBody && assistantBody.textContent.trim();
-        if (partial) {
-          assistantBody.innerHTML = formatAssistantBodyHtml(partial);
-          messages.push({ role: "assistant", content: partial });
+        if (partialRaw && assistantBody) {
+          assistantBody.innerHTML = formatAssistantBodyHtml(partialRaw);
+          messages.push({ role: "assistant", content: partialRaw });
         } else if (assistantDiv) {
           assistantDiv.remove();
         }
         appendLine("system", "Generation aborted (Ctrl+C).");
       } else {
-        const partial = assistantBody && assistantBody.textContent.trim();
-        if (partial) {
-          assistantBody.innerHTML = formatAssistantBodyHtml(partial);
-          messages.push({ role: "assistant", content: partial });
+        if (partialRaw && assistantBody) {
+          assistantBody.innerHTML = formatAssistantBodyHtml(partialRaw);
+          messages.push({ role: "assistant", content: partialRaw });
         } else if (assistantDiv) {
           assistantDiv.remove();
         }
         appendLine("error", String(e.message || e));
       }
     } finally {
+      streamTabFlush = null;
       generating = false;
       genAbort = null;
       el.terminal.classList.remove("generating");
@@ -2689,6 +2941,10 @@
       el.terminal.addEventListener("pointerdown", onTerminalPointerDownCapture, true);
     }
     initTerminalScrollbarSync();
+    if (!tabFocusFlushListenerAdded) {
+      tabFocusFlushListenerAdded = true;
+      document.addEventListener("visibilitychange", flushPendingChunksOnTabFocus);
+    }
     void refreshCornerConnectLine();
     startCornerMetaClock();
     void refreshCornerPingDisplay();
