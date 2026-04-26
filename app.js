@@ -701,14 +701,52 @@
     });
   }
 
-  /** If the user is within this many px of the bottom, new transcript lines may auto-scroll. */
-  const OUTPUT_STICKY_BOTTOM_PX = 80;
+  /**
+   * If the user is within this many px of the bottom, we treat them as "following" the
+   * stream. Kept small so nudging up a bit is not re-pulled on every typewriter tick.
+   */
+  const OUTPUT_STICKY_BOTTOM_PX = 18;
+  /**
+   * After we set `scrollTop` ourselves, treat the next `scroll` event(s) as not user intent.
+   * (ms, `performance.now()`.)
+   */
+  const OUTPUT_AUTOSCROLL_SUPPRESS_MS = 100;
+  /**
+   * Pixels from bottom: user explicitly followed the end again; resume autoscroll.
+   */
+  const OUTPUT_RESUME_AUTOSCROLL_MAX_DIST_PX = 2.5;
+
+  let userOptedOutOfOutputAutoscroll = false;
+  let outputAutoscrollSuppressUserIntentUntil = 0;
+  let lastOutputScrollTop = 0;
 
   function isOutputNearBottom() {
     const sc = el.outputScroll;
     if (!sc) return true;
     const dist = sc.scrollHeight - sc.clientHeight - sc.scrollTop;
     return dist <= OUTPUT_STICKY_BOTTOM_PX;
+  }
+
+  function markOutputAutoscrollProgrammatic() {
+    outputAutoscrollSuppressUserIntentUntil = performance.now() + OUTPUT_AUTOSCROLL_SUPPRESS_MS;
+  }
+
+  function updateUserOutputAutoscrollFromScroll() {
+    const sc = el.outputScroll;
+    if (!sc) return;
+    if (performance.now() < outputAutoscrollSuppressUserIntentUntil) {
+      lastOutputScrollTop = sc.scrollTop;
+      return;
+    }
+    const max = Math.max(0, sc.scrollHeight - sc.clientHeight);
+    const dist = max - sc.scrollTop;
+    if (dist <= OUTPUT_RESUME_AUTOSCROLL_MAX_DIST_PX) {
+      userOptedOutOfOutputAutoscroll = false;
+    } else if (sc.scrollTop < lastOutputScrollTop - 0.5) {
+      /* User (or widget) moved the viewport up. */
+      userOptedOutOfOutputAutoscroll = true;
+    }
+    lastOutputScrollTop = sc.scrollTop;
   }
 
   /**
@@ -718,15 +756,26 @@
    */
   function scrollOutputToBottomIfPinned(wasNearBottom) {
     const sc = el.outputScroll;
+    if (userOptedOutOfOutputAutoscroll) {
+      syncTerminalScrollbar();
+      return;
+    }
     if (wasNearBottom && sc) {
+      markOutputAutoscrollProgrammatic();
       sc.scrollTop = sc.scrollHeight;
+      lastOutputScrollTop = sc.scrollTop;
     }
     syncTerminalScrollbar();
   }
 
   function scrollOutputToBottom() {
     const sc = el.outputScroll;
-    if (sc) sc.scrollTop = sc.scrollHeight;
+    if (sc) {
+      userOptedOutOfOutputAutoscroll = false;
+      markOutputAutoscrollProgrammatic();
+      sc.scrollTop = sc.scrollHeight;
+      lastOutputScrollTop = sc.scrollTop;
+    }
     syncTerminalScrollbar();
   }
 
@@ -742,8 +791,27 @@
     if (!sc || !wrap || !rail || !thumb || !track) return;
 
     const sync = () => syncTerminalScrollbar();
-
-    sc.addEventListener("scroll", sync, { passive: true });
+    const onOutputScroll = () => {
+      updateUserOutputAutoscrollFromScroll();
+      sync();
+    };
+    sc.addEventListener("scroll", onOutputScroll, { passive: true });
+    sc.addEventListener(
+      "wheel",
+      (e) => {
+        if (e.deltaY < 0) {
+          userOptedOutOfOutputAutoscroll = true;
+        }
+        if (e.deltaY > 0) {
+          const max = Math.max(0, sc.scrollHeight - sc.clientHeight);
+          if (max - sc.scrollTop <= OUTPUT_RESUME_AUTOSCROLL_MAX_DIST_PX + 1) {
+            userOptedOutOfOutputAutoscroll = false;
+          }
+        }
+      },
+      { passive: true }
+    );
+    lastOutputScrollTop = sc.scrollTop;
 
     track.addEventListener("click", (e) => {
       if (e.target === thumb || thumb.contains(e.target)) return;
