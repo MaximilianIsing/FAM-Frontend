@@ -1629,9 +1629,22 @@ html.terminal-phase body {
     overscroll-behavior: none;
   }
 
+  /* Single scroll: inner `.terminal-output` only — no page/body scroll bar. */
   html.terminal-phase {
     /* Reduces double-tap zoom delay on iOS where supported */
     touch-action: manipulation;
+    height: 100%;
+    max-height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  html.terminal-phase body {
+    min-height: 0;
+    height: 100%;
+    max-height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   .landing__content {
@@ -1707,6 +1720,13 @@ html.terminal-phase body {
   .fam-terminal {
     /* Logo is a full-width top row; native overflow scroll (no custom rail). */
     --fam-terminal-pad-right: max(0.65rem, env(safe-area-inset-right, 0px));
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  .fam-terminal .app {
+    min-height: 0;
+    max-height: 100%;
   }
 
   /* Own row at top, centered (not absolute top-right) */
